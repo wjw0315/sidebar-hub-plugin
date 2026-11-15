@@ -8,7 +8,7 @@ import { z } from "zod";
  * the settings page without any registration.
  */
 export const installedPluginsRpc = defineRpc({
-  name: "sidebar-hub.installedPlugins",
+  name: "sidebar-hub.installed-plugins",
   input: z.object({}),
   output: z.object({
     plugins: z.array(

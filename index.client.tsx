@@ -3,6 +3,7 @@ import type { PluginClientContext, PluginSurfaceProps } from "@getpaseo/plugin/c
 import { createController } from "./client/bg/controller";
 import { createSettingsScreen } from "./client/bg/settings-screen";
 import { language } from "./client/bg/web";
+import { contributePlane } from "./client/plane/plane-contribute";
 import { createHubItem } from "./client/hub-item";
 import { createHubSettingsScreen } from "./client/hub-settings";
 
@@ -26,6 +27,10 @@ export default function contribute(client: PluginClientContext) {
       openSettings("hub-settings");
     },
   });
+
+  // Plane module, moved from the standalone plane-plugin (functional hooks live
+  // on the server side; this registers its screen, settings page and CC entry).
+  const planeCleanup = contributePlane(client);
 
   // Background module, moved from the standalone bg plugin (web-only there too).
   if (Platform.OS === "web") {
@@ -61,7 +66,10 @@ export default function contribute(client: PluginClientContext) {
         await controller.toggle();
       },
     });
-    return () => controller.dispose();
+    return () => {
+      planeCleanup();
+      controller.dispose();
+    };
   }
-  return () => {};
+  return () => planeCleanup();
 }

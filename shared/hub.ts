@@ -16,6 +16,7 @@ export interface HubModule {
 
 export const MODULES: HubModule[] = [
   { id: "background", screenId: "hub-background", icon: "Image", enTitle: "Backgrounds", zhTitle: "背景" },
+  { id: "plane", screenId: "plane-board", icon: "SquareKanban", enTitle: "Plane Board", zhTitle: "Plane 任务看板" },
   // 二期移植 Chat Polish 时在此登记：{ id: "polish", screenId: "hub-polish", icon: "Sparkles", enTitle: "Chat Polish", zhTitle: "Chat Polish" }
 ];
 

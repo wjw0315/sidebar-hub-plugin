@@ -2,5 +2,5 @@
   "id": "sidebar-hub",
   "name": "Sidebar Hub",
   "description": "Collapses plugin entries into one configurable sidebar group",
-  "requirements": { "paseo": ">=0.13.0" }
+  "requirements": { "paseo": ">=0.14.0" }
 }

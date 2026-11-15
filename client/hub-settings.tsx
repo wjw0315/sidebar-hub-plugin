@@ -6,14 +6,13 @@ import { useQuery } from "@tanstack/react-query";
 import { SettingsAction, SettingsCard, SettingsSection, SettingsSwitch } from "@getpaseo/plugin/client/ui";
 import { MODULES, hubDefaults, hubRpc, hubSchema } from "../shared/hub";
 import { installedPluginsRpc } from "../shared/plugin-list";
-import { pluginSidebarVisible, reloadApp, setPluginSidebarVisible } from "./web";
+import { reloadApp, setSidebarEntryVisible, sidebarEntryVisible } from "./web";
 
 export function createHubSettingsScreen(client: PluginClientContext) {
   return function HubSettingsScreen(_props: PluginSurfaceProps) {
     const [enabled, setEnabled] = useState<string[]>(hubDefaults().enabled);
     const [revision, setRevision] = useState("");
     const [error, setError] = useState<string | null>(null);
-    const [dirty, setDirty] = useState(false);
     const locale: string = (client as { i18n?: { locale?: string } }).i18n?.locale ?? "";
     const zh = locale.startsWith("zh");
 
@@ -77,21 +76,13 @@ export function createHubSettingsScreen(client: PluginClientContext) {
             <Text style={{ paddingHorizontal: 16, fontSize: 12, color: "red" }}>{error}</Text>
           ) : null}
         </SettingsSection>
-        {Platform.OS === "web" ? <SidebarRowsSection zh={zh} dirty={dirty} setDirty={setDirty} /> : null}
+        {Platform.OS === "web" ? <SidebarRowsSection zh={zh} /> : null}
       </>
     );
   };
 }
 
-function SidebarRowsSection({
-  zh,
-  dirty,
-  setDirty,
-}: {
-  zh: boolean;
-  dirty: boolean;
-  setDirty: (value: boolean) => void;
-}) {
+function SidebarRowsSection({ zh }: { zh: boolean }) {
   const list = useRpc(installedPluginsRpc);
   const { data } = useQuery({
     queryKey: ["sidebar-hub", "installed-plugins"],
@@ -100,17 +91,26 @@ function SidebarRowsSection({
   });
   // Initial visibility reads the app-settings blob once on mount.
   const [visible, setVisible] = useState<Record<string, boolean>>({});
+  const [pending, setPending] = useState(false);
+
+  const rows = (data?.plugins ?? []).flatMap((plugin) =>
+    plugin.entries.map((entry) => ({
+      key: `${plugin.id}/${entry.section}/${entry.itemId}`,
+      pluginId: plugin.id,
+      ...entry,
+    })),
+  );
   useEffect(() => {
-    if (!data) return;
     const next: Record<string, boolean> = {};
-    for (const plugin of data.plugins) next[plugin.id] = pluginSidebarVisible(plugin.id);
+    for (const row of rows) next[row.key] = sidebarEntryVisible(row.pluginId, row.section, row.itemId);
     setVisible(next);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data]);
 
-  function toggle(pluginId: string, value: boolean) {
-    if (setPluginSidebarVisible(pluginId, value)) {
-      setVisible((current) => ({ ...current, [pluginId]: value }));
-      setDirty(true);
+  function toggle(row: (typeof rows)[number], value: boolean) {
+    if (setSidebarEntryVisible(row.pluginId, row.section, row.itemId, value)) {
+      setVisible((current) => ({ ...current, [row.key]: value }));
+      setPending(true);
     }
   }
 
@@ -124,18 +124,21 @@ function SidebarRowsSection({
       }
     >
       <SettingsCard>
-        {(data?.plugins ?? [])
-          .filter((plugin) => plugin.id !== "sidebar-hub" && plugin.enabled)
-          .map((plugin) => (
-            <SettingsSwitch
-              key={plugin.id}
-              label={plugin.id}
-              value={visible[plugin.id] !== false}
-              onValueChange={(value) => toggle(plugin.id, value)}
-            />
-          ))}
+        {rows.map((row) => (
+          <SettingsSwitch
+            key={row.key}
+            label={zh ? `${row.pluginId}（${row.section === "header" ? "上" : "下"}区）` : `${row.pluginId} · ${row.section}`}
+            value={visible[row.key] !== false}
+            onValueChange={(value) => toggle(row, value)}
+          />
+        ))}
+        {rows.length === 0 ? (
+          <Text style={{ paddingHorizontal: 16, fontSize: 12, color: "gray" }}>
+            {zh ? "未发现可管理的侧栏条目" : "No manageable sidebar rows found"}
+          </Text>
+        ) : null}
       </SettingsCard>
-      {dirty ? (
+      {pending ? (
         <SettingsCard>
           <SettingsAction
             label={zh ? "改动已保存，刷新应用后生效（尽快刷新，避免被其他设置写回覆盖）" : "Saved. Reload the app to apply (soon, to avoid being overwritten)."}

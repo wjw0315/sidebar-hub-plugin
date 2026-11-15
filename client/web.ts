@@ -104,3 +104,43 @@ export function reloadApp(): void {
     // Non-web surface; the toggle is only offered on web.
   }
 }
+
+/**
+ * Navigate to any plugin surface by its route (`/h/<serverId>/plugin/<pluginId>/<kind>/<id>`),
+ * the same URL form Paseo builds for screens. Tries a synthetic link click first so Expo Router
+ * routes client-side; falls back to a full navigation if the pathname did not move.
+ */
+export function navigateToSurface(
+  serverId: string,
+  target: { pluginId: string; kind: string; surfaceId: string },
+): boolean {
+  const path = `/h/${encodeURIComponent(serverId)}/plugin/${encodeURIComponent(target.pluginId)}/${target.kind}/${encodeURIComponent(target.surfaceId)}`;
+  interface NavigableWindow {
+    location?: { assign(url: string): void; pathname?: string };
+    document?: {
+      createElement(tag: string): { href: string; click(): void };
+      body?: { appendChild(node: unknown): void; removeChild(node: unknown): void };
+    };
+  }
+  const g = globalThis as NavigableWindow;
+  try {
+    const doc = g.document;
+    if (doc?.body) {
+      const anchor = doc.createElement("a");
+      anchor.href = path;
+      doc.body.appendChild(anchor);
+      anchor.click();
+      doc.body.removeChild(anchor);
+      setTimeout(() => {
+        const pathname = g.location?.pathname;
+        if (pathname && !pathname.includes("/plugin/")) g.location?.assign(path);
+      }, 600);
+      return true;
+    }
+    g.location?.assign(path);
+    return true;
+  } catch (error) {
+    console.warn("[sidebar-hub] Navigation failed", error);
+    return false;
+  }
+}

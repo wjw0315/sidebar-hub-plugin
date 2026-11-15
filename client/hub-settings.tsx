@@ -4,7 +4,7 @@ import type { PluginClientContext, PluginSurfaceProps } from "@getpaseo/plugin/c
 import { useRpc } from "@getpaseo/plugin/client";
 import { useQuery } from "@tanstack/react-query";
 import { SettingsAction, SettingsCard, SettingsSection, SettingsSwitch } from "@getpaseo/plugin/client/ui";
-import { MODULES, hubDefaults, hubRpc, hubSchema } from "../shared/hub";
+import { MODULES, hubDefaults, hubRpc, hubSchema, type HubModule } from "../shared/hub";
 import { installedPluginsRpc } from "../shared/plugin-list";
 import { reloadApp, setSidebarEntryVisible, sidebarEntryVisible } from "./web";
 
@@ -13,6 +13,7 @@ export function createHubSettingsScreen(client: PluginClientContext) {
     const [enabled, setEnabled] = useState<string[]>(hubDefaults().enabled);
     const [revision, setRevision] = useState("");
     const [error, setError] = useState<string | null>(null);
+    const [pending, setPending] = useState(false);
     const locale: string = (client as { i18n?: { locale?: string } }).i18n?.locale ?? "";
     const zh = locale.startsWith("zh");
 
@@ -39,6 +40,14 @@ export function createHubSettingsScreen(client: PluginClientContext) {
     async function toggle(id: string, value: boolean) {
       const next = value ? [...new Set([...enabled, id])] : enabled.filter((x) => x !== id);
       setEnabled(next);
+      // A checked module takes over its plugin's own sidebar row; unchecked hands it back.
+      const module = MODULES.find((m) => m.id === id);
+      if (module?.sourceSidebarEntry && Platform.OS === "web") {
+        const pluginId = module.externalSurface?.pluginId ?? module.id;
+        if (setSidebarEntryVisible(pluginId, module.sourceSidebarEntry.section, module.sourceSidebarEntry.itemId, !value)) {
+          setPending(true);
+        }
+      }
       try {
         const result = await client.rpc(hubRpc.write, { values: { enabled: next }, revision });
         if (result.status !== "saved") {
@@ -60,7 +69,11 @@ export function createHubSettingsScreen(client: PluginClientContext) {
       <>
         <SettingsSection
           title={zh ? "组内模块" : "Modules in the group"}
-          info={zh ? "勾选的模块出现在侧栏分组菜单里" : "Checked modules appear in the sidebar group menu"}
+          info={
+            zh
+              ? "勾选的模块出现在侧栏分组菜单里；勾选外部插件时它自己的侧栏条目会自动隐藏"
+              : "Checked modules appear in the sidebar group menu; checking an external plugin hides its own sidebar row"
+          }
         >
           <SettingsCard>
             {MODULES.map((module) => (
@@ -76,13 +89,30 @@ export function createHubSettingsScreen(client: PluginClientContext) {
             <Text style={{ paddingHorizontal: 16, fontSize: 12, color: "red" }}>{error}</Text>
           ) : null}
         </SettingsSection>
-        {Platform.OS === "web" ? <SidebarRowsSection zh={zh} /> : null}
+        {Platform.OS === "web" ? <SidebarRowsSection zh={zh} setPending={setPending} /> : null}
+        {pending ? (
+          <SettingsSection title={zh ? "待生效" : "Pending changes"}>
+            <SettingsCard>
+              <SettingsAction
+                label={zh ? "改动已保存，刷新应用后生效（尽快刷新，避免被其他设置写回覆盖）" : "Saved. Reload the app to apply (soon, to avoid being overwritten)."}
+                actionLabel={zh ? "立即刷新" : "Reload now"}
+                onPress={() => reloadApp()}
+              />
+            </SettingsCard>
+          </SettingsSection>
+        ) : null}
       </>
     );
   };
 }
 
-function SidebarRowsSection({ zh }: { zh: boolean }) {
+function SidebarRowsSection({
+  zh,
+  setPending,
+}: {
+  zh: boolean;
+  setPending: (value: boolean) => void;
+}) {
   const list = useRpc(installedPluginsRpc);
   const { data } = useQuery({
     queryKey: ["sidebar-hub", "installed-plugins"],
@@ -91,7 +121,6 @@ function SidebarRowsSection({ zh }: { zh: boolean }) {
   });
   // Initial visibility reads the app-settings blob once on mount.
   const [visible, setVisible] = useState<Record<string, boolean>>({});
-  const [pending, setPending] = useState(false);
 
   const rows = (data?.plugins ?? []).flatMap((plugin) =>
     plugin.entries.map((entry) => ({
@@ -138,15 +167,6 @@ function SidebarRowsSection({ zh }: { zh: boolean }) {
           </Text>
         ) : null}
       </SettingsCard>
-      {pending ? (
-        <SettingsCard>
-          <SettingsAction
-            label={zh ? "改动已保存，刷新应用后生效（尽快刷新，避免被其他设置写回覆盖）" : "Saved. Reload the app to apply (soon, to avoid being overwritten)."}
-            actionLabel={zh ? "立即刷新" : "Reload now"}
-            onPress={() => reloadApp()}
-          />
-        </SettingsCard>
-      ) : null}
     </SettingsSection>
   );
 }

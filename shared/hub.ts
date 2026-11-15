@@ -6,8 +6,12 @@ import { z } from "zod";
 // its screen in index.client.tsx. The toggle list renders from this table.
 export interface HubModule {
   id: string;
-  /** Hub screen opened from the group popover. */
-  screenId: string;
+  /** Hub screen opened from the group popover. Modules transplanted into the hub set this. */
+  screenId?: string;
+  /** External plugin surface, opened by URL navigation — no code moved, plugin keeps running. */
+  externalSurface?: { pluginId: string; kind: "screen" | "sidebar"; surfaceId: string };
+  /** The plugin's own sidebar row, hidden while the module is checked, restored when unchecked. */
+  sourceSidebarEntry?: { section: "header" | "footer"; itemId: string };
   /** Lucide icon name. */
   icon: string;
   enTitle: string;
@@ -17,6 +21,22 @@ export interface HubModule {
 export const MODULES: HubModule[] = [
   { id: "background", screenId: "hub-background", icon: "Image", enTitle: "Backgrounds", zhTitle: "背景" },
   { id: "plane", screenId: "plane-board", icon: "SquareKanban", enTitle: "Plane Board", zhTitle: "Plane 任务看板" },
+  {
+    id: "server-browser",
+    externalSurface: { pluginId: "server-browser", kind: "screen", surfaceId: "server-browser" },
+    sourceSidebarEntry: { section: "header", itemId: "server-browser" },
+    icon: "MonitorSmartphone",
+    enTitle: "Server Browser",
+    zhTitle: "服务器浏览器",
+  },
+  {
+    id: "vivid-activity",
+    externalSurface: { pluginId: "vivid-activity", kind: "screen", surfaceId: "settings" },
+    sourceSidebarEntry: { section: "header", itemId: "settings" },
+    icon: "Activity",
+    enTitle: "Vivid Activity",
+    zhTitle: "彩色活动行",
+  },
   // 二期移植 Chat Polish 时在此登记：{ id: "polish", screenId: "hub-polish", icon: "Sparkles", enTitle: "Chat Polish", zhTitle: "Chat Polish" }
 ];
 

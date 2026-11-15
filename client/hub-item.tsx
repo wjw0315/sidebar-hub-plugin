@@ -7,6 +7,7 @@ import type {
 } from "@getpaseo/plugin/client";
 import { SidebarRow } from "@getpaseo/plugin/client/ui";
 import { MODULES, hubDefaults, hubRpc, hubSchema, type HubModule } from "../shared/hub";
+import { navigateToSurface } from "./web";
 
 function titleOf(module: HubModule, zh: boolean): string {
   return zh ? module.zhTitle : module.enTitle;
@@ -18,6 +19,7 @@ function GroupMenu({
   theme,
   close,
   openScreen,
+  host,
 }: PluginPopoverProps & { readEnabled: () => Promise<string[]>; zh: boolean }) {
   const [enabled, setEnabled] = useState<string[] | null>(null);
   useEffect(() => {
@@ -47,7 +49,11 @@ function GroupMenu({
           accessibilityLabel={titleOf(module, zh)}
           onPress={() => {
             close();
-            openScreen({ screenId: module.screenId });
+            if (module.externalSurface) {
+              navigateToSurface(host.id, module.externalSurface);
+            } else if (module.screenId) {
+              openScreen({ screenId: module.screenId });
+            }
           }}
           style={{
             paddingHorizontal: 14,

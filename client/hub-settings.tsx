@@ -6,6 +6,7 @@ import { useQuery } from "@tanstack/react-query";
 import { SettingsAction, SettingsCard, SettingsSection, SettingsSwitch } from "@getpaseo/plugin/client/ui";
 import { MODULES, hubDefaults, hubRpc, hubSchema, type HubModule } from "../shared/hub";
 import { installedPluginsRpc } from "../shared/plugin-list";
+import { syncHiddenRows } from "./hub-hidden-rows";
 import {
   discoverSidebarRows,
   reloadApp,
@@ -13,25 +14,6 @@ import {
   sidebarEntryVisible,
   type DiscoveredSidebarRow,
 } from "./web";
-
-/**
- * Enabling a module must hide its plugin's own row. Re-apply that on every open
- * so settings saved before the preference-key fix (which wrote keys the app
- * never matched) heal without toggling every module off and on again.
- */
-function syncHiddenRows(enabledIds: string[]): boolean {
-  if (Platform.OS !== "web") return false;
-  let changed = false;
-  for (const module of MODULES) {
-    if (!module.sourceSidebarEntry || !enabledIds.includes(module.id)) continue;
-    const pluginId = module.externalSurface?.pluginId ?? "sidebar-hub";
-    const { section, itemId } = module.sourceSidebarEntry;
-    if (sidebarEntryVisible(pluginId, section, itemId)) {
-      if (setSidebarEntryVisible(pluginId, section, itemId, false)) changed = true;
-    }
-  }
-  return changed;
-}
 
 export function createHubSettingsScreen(client: PluginClientContext) {
   return function HubSettingsScreen(_props: PluginSurfaceProps) {

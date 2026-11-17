@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Pressable, Text, View } from "react-native";
+import { Platform, Pressable, Text, View } from "react-native";
 import type {
   PluginClientContext,
   PluginPopoverProps,
@@ -7,6 +7,7 @@ import type {
 } from "@getpaseo/plugin/client";
 import { SidebarRow } from "@getpaseo/plugin/client/ui";
 import { MODULES, hubDefaults, hubRpc, hubSchema, type HubModule } from "../shared/hub";
+import { syncHiddenRows } from "./hub-hidden-rows";
 import { navigateToSurface } from "./web";
 
 function titleOf(module: HubModule, zh: boolean): string {
@@ -79,6 +80,34 @@ export function createHubItem(client: PluginClientContext) {
   const locale: string = (client as { i18n?: { locale?: string } }).i18n?.locale ?? "";
   const zh = locale.startsWith("zh");
   function HubItem({ openPopover }: PluginSidebarItemProps) {
+    // Heal hidden source rows on every mount (web only). The popover cannot
+    // hide them, and waiting for a settings-screen visit meant default-enabled
+    // external modules kept their own rows visible forever. Reads fail soft:
+    // transport errors skip the heal, no saved settings (null) means the
+    // schema defaults. Writes apply at the next app-side read (launch or the
+    // settings screen's "Reload now"); this never reloads on its own.
+    useEffect(() => {
+      if (Platform.OS !== "web") return;
+      let cancelled = false;
+      void (async () => {
+        try {
+          const result = await client.rpc(hubRpc.read, {});
+          if (cancelled || result.status !== "ready") return;
+          const enabled =
+            result.values === null
+              ? hubDefaults().enabled
+              : hubSchema.safeParse(result.values).success
+                ? hubSchema.parse(result.values).enabled
+                : null;
+          if (enabled) syncHiddenRows(enabled);
+        } catch {
+          // Retry happens on the next mount or settings open.
+        }
+      })();
+      return () => {
+        cancelled = true;
+      };
+    }, []);
     return (
       <SidebarRow
         icon="Folders"

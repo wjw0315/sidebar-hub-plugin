@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Platform, Text } from "react-native";
 import type { PluginClientContext, PluginSurfaceProps } from "@getpaseo/plugin/client";
 import { useRpc } from "@getpaseo/plugin/client";
@@ -6,7 +6,32 @@ import { useQuery } from "@tanstack/react-query";
 import { SettingsAction, SettingsCard, SettingsSection, SettingsSwitch } from "@getpaseo/plugin/client/ui";
 import { MODULES, hubDefaults, hubRpc, hubSchema, type HubModule } from "../shared/hub";
 import { installedPluginsRpc } from "../shared/plugin-list";
-import { reloadApp, setSidebarEntryVisible, sidebarEntryVisible } from "./web";
+import {
+  discoverSidebarRows,
+  reloadApp,
+  setSidebarEntryVisible,
+  sidebarEntryVisible,
+  type DiscoveredSidebarRow,
+} from "./web";
+
+/**
+ * Enabling a module must hide its plugin's own row. Re-apply that on every open
+ * so settings saved before the preference-key fix (which wrote keys the app
+ * never matched) heal without toggling every module off and on again.
+ */
+function syncHiddenRows(enabledIds: string[]): boolean {
+  if (Platform.OS !== "web") return false;
+  let changed = false;
+  for (const module of MODULES) {
+    if (!module.sourceSidebarEntry || !enabledIds.includes(module.id)) continue;
+    const pluginId = module.externalSurface?.pluginId ?? "sidebar-hub";
+    const { section, itemId } = module.sourceSidebarEntry;
+    if (sidebarEntryVisible(pluginId, section, itemId)) {
+      if (setSidebarEntryVisible(pluginId, section, itemId, false)) changed = true;
+    }
+  }
+  return changed;
+}
 
 export function createHubSettingsScreen(client: PluginClientContext) {
   return function HubSettingsScreen(_props: PluginSurfaceProps) {
@@ -23,6 +48,7 @@ export function createHubSettingsScreen(client: PluginClientContext) {
         .then((result) => {
           if (result.status !== "ready") {
             setError(result.error);
+            if (syncHiddenRows(hubDefaults().enabled)) setPending(true);
             return;
           }
           // settingsRpc returns values as loose JSON; parse against the schema.
@@ -30,6 +56,7 @@ export function createHubSettingsScreen(client: PluginClientContext) {
           if (parsed.success) {
             setEnabled(parsed.data.enabled);
             setRevision(result.revision);
+            if (syncHiddenRows(parsed.data.enabled)) setPending(true);
           } else {
             setError(parsed.error.message);
           }
@@ -43,7 +70,7 @@ export function createHubSettingsScreen(client: PluginClientContext) {
       // A checked module takes over its plugin's own sidebar row; unchecked hands it back.
       const module = MODULES.find((m) => m.id === id);
       if (module?.sourceSidebarEntry && Platform.OS === "web") {
-        const pluginId = module.externalSurface?.pluginId ?? module.id;
+        const pluginId = module.externalSurface?.pluginId ?? "sidebar-hub";
         if (setSidebarEntryVisible(pluginId, module.sourceSidebarEntry.section, module.sourceSidebarEntry.itemId, !value)) {
           setPending(true);
         }
@@ -114,32 +141,67 @@ function SidebarRowsSection({
   setPending: (value: boolean) => void;
 }) {
   const list = useRpc(installedPluginsRpc);
-  const { data } = useQuery({
+  const { data, refetch } = useQuery({
     queryKey: ["sidebar-hub", "installed-plugins"],
     queryFn: async () => list({}),
-    staleTime: 30_000,
+    // New installs must appear without restarting the app.
+    staleTime: 0,
+    refetchOnMount: "always",
   });
-  // Initial visibility reads the app-settings blob once on mount.
+  // Initial visibility reads the app-settings blob once per row set.
   const [visible, setVisible] = useState<Record<string, boolean>>({});
+  // Rows the source scan cannot see (dynamic ids) come from the live DOM/storage.
+  const [discovered, setDiscovered] = useState<DiscoveredSidebarRow[]>([]);
 
-  const rows = (data?.plugins ?? []).flatMap((plugin) =>
-    plugin.entries.map((entry) => ({
-      key: `${plugin.id}/${entry.section}/${entry.itemId}`,
-      pluginId: plugin.id,
-      ...entry,
-    })),
+  const plugins = useMemo(() => data?.plugins ?? [], [data]);
+
+  const scanned = useMemo(
+    () =>
+      plugins.flatMap((plugin) =>
+        plugin.entries.map((entry) => ({
+          pluginId: plugin.id,
+          section: entry.section,
+          itemId: entry.itemId,
+        })),
+      ),
+    [plugins],
   );
+
+  const knownIds = useMemo(() => plugins.map((plugin) => plugin.id), [plugins]);
+
+  useEffect(() => {
+    setDiscovered(discoverSidebarRows(knownIds));
+  }, [knownIds]);
+
+  const rows = useMemo(() => {
+    const map = new Map<string, (typeof scanned)[number] & { key: string }>();
+    for (const row of [...scanned, ...discovered]) {
+      const key = `${row.pluginId}/${row.section}/${row.itemId}`;
+      if (!map.has(key)) map.set(key, { key, ...row });
+    }
+    return [...map.values()];
+  }, [scanned, discovered]);
+
   useEffect(() => {
     const next: Record<string, boolean> = {};
     for (const row of rows) next[row.key] = sidebarEntryVisible(row.pluginId, row.section, row.itemId);
     setVisible(next);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data]);
+  }, [rows]);
 
   function toggle(row: (typeof rows)[number], value: boolean) {
     if (setSidebarEntryVisible(row.pluginId, row.section, row.itemId, value)) {
       setVisible((current) => ({ ...current, [row.key]: value }));
       setPending(true);
+    }
+  }
+
+  async function refresh() {
+    try {
+      const result = await refetch();
+      const ids = (result.data?.plugins ?? []).map((plugin) => plugin.id);
+      setDiscovered(discoverSidebarRows(ids));
+    } catch {
+      // Keep the current list; the error banner above reports RPC failures.
     }
   }
 
@@ -166,6 +228,11 @@ function SidebarRowsSection({
             {zh ? "未发现可管理的侧栏条目" : "No manageable sidebar rows found"}
           </Text>
         ) : null}
+        <SettingsAction
+          label={zh ? "刚装的插件没出现？重新扫描一次" : "Newly installed plugin missing? Rescan"}
+          actionLabel={zh ? "刷新列表" : "Refresh"}
+          onPress={() => void refresh()}
+        />
       </SettingsCard>
     </SettingsSection>
   );

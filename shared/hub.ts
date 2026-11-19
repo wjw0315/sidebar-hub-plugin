@@ -8,8 +8,15 @@ export interface HubModule {
   id: string;
   /** Hub screen opened from the group popover. Modules transplanted into the hub set this. */
   screenId?: string;
-  /** External plugin surface, opened by URL navigation — no code moved, plugin keeps running. */
-  externalSurface?: { pluginId: string; kind: "screen" | "sidebar"; surfaceId: string };
+  /**
+   * External plugin surface, opened by URL navigation — no code moved, plugin keeps running.
+   * `kind` is Paseo's route segment, and it must be `surface` / `sidebar`: the app parses
+   * `/h/<serverId>/plugin/<pluginId>/(sidebar|surface)/<id>` and anything else fails to parse
+   * (the route renders nothing, so the entry looks dead). A plugin's `addScreen` id is reached
+   * as `surface`; a legacy sidebar item id as `sidebar`. Settings screens are a different route
+   * (`buildPluginSettingsRoute`) and are not reachable this way.
+   */
+  externalSurface?: { pluginId: string; kind: "surface" | "sidebar"; surfaceId: string };
   /** The plugin's own sidebar row, hidden while the module is checked, restored when unchecked. */
   sourceSidebarEntry?: { section: "header" | "footer"; itemId: string };
   /** Lucide icon name. */
@@ -23,7 +30,7 @@ export const MODULES: HubModule[] = [
   { id: "plane", screenId: "plane-board", icon: "SquareKanban", enTitle: "Plane Board", zhTitle: "Plane 任务看板" },
   {
     id: "server-browser",
-    externalSurface: { pluginId: "server-browser", kind: "screen", surfaceId: "server-browser" },
+    externalSurface: { pluginId: "server-browser", kind: "surface", surfaceId: "server-browser" },
     sourceSidebarEntry: { section: "header", itemId: "server-browser" },
     icon: "MonitorSmartphone",
     enTitle: "Server Browser",
@@ -31,7 +38,7 @@ export const MODULES: HubModule[] = [
   },
   {
     id: "vivid-activity",
-    externalSurface: { pluginId: "vivid-activity", kind: "screen", surfaceId: "settings" },
+    externalSurface: { pluginId: "vivid-activity", kind: "surface", surfaceId: "settings" },
     sourceSidebarEntry: { section: "header", itemId: "settings" },
     icon: "Activity",
     enTitle: "Vivid Activity",

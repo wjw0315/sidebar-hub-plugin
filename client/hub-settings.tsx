@@ -192,8 +192,8 @@ function SidebarRowsSection({
       title={zh ? "插件侧栏条目" : "Plugin sidebar rows"}
       info={
         zh
-          ? "控制每个插件自己的条目是否显示在左侧栏（新装插件自动出现在这里）"
-          : "Show or hide each plugin's own sidebar row, including newly installed plugins"
+          ? "控制每个插件自己的条目是否显示在左侧栏；关掉的条目会移到 Sidebar Hub 菜单里（新装插件自动出现在这里）"
+          : "Show or hide each plugin's own sidebar row; hidden rows move into the Sidebar Hub menu (new installs appear here)"
       }
     >
       <SettingsCard>

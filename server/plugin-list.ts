@@ -7,17 +7,24 @@ import { installedPluginsRpc } from "../shared/plugin-list";
 interface SidebarEntry {
   section: "header" | "footer";
   itemId: string;
+  /** Registered with the legacy `addSidebarItem`, which carries its own surface id. */
+  legacy: boolean;
 }
 
 interface ScanResult {
   id: string;
   enabled: boolean;
+  name: string | null;
+  screens: string[];
   entries: SidebarEntry[];
 }
 
 type CallKind = "addSidebarHeaderItem" | "addSidebarFooterItem" | "addSidebarItem";
 
 const CALL_RE = /\b(addSidebarHeaderItem|addSidebarFooterItem|addSidebarItem)\s*\(/g;
+const SCREEN_RE = /\baddScreen\s*\(/g;
+/** `const PLANE_SCREEN_ID = "plane-board"` — ids are often shared constants, not literals. */
+const CONST_RE = /\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*(?::[^=]+)?=\s*(["'])([^"'\\]*)\2/g;
 const SKIP_DIRS = new Set(["node_modules", ".git", "tests", "test", "verification"]);
 const MAX_FILES = 500;
 
@@ -285,7 +292,21 @@ function idsForDynamicCall(source: string, callIndex: number, idExpression: stri
   return [];
 }
 
-function extractEntries(source: string, entries: SidebarEntry[]): void {
+function extractEntries(
+  source: string,
+  entries: SidebarEntry[],
+  screens: string[],
+  constants: Map<string, string>,
+): void {
+  /** A literal id, a `const` that holds one, or ids built by iterating an array. */
+  const idsOf = (raw: string, callIndex: number): string[] => {
+    const literal = literalString(raw);
+    if (literal) return [literal];
+    const constant = constants.get(raw.trim());
+    if (constant) return [constant];
+    return idsForDynamicCall(source, callIndex, raw);
+  };
+
   CALL_RE.lastIndex = 0;
   let match: RegExpExecArray | null;
   while ((match = CALL_RE.exec(source)) !== null) {
@@ -298,29 +319,65 @@ function extractEntries(source: string, entries: SidebarEntry[]): void {
     const props = topLevelProperties(source.slice(openBrace, closeBrace + 1));
     const rawId = props.id;
     if (!rawId) continue;
-    const literal = literalString(rawId);
-    if (literal) {
-      entries.push({ section, itemId: literal });
-      continue;
+    const legacy = kind === "addSidebarItem";
+    for (const id of idsOf(rawId, match.index)) entries.push({ section, itemId: id, legacy });
+  }
+
+  // Screens are the only surfaces a plugin surface route can open (see shared/plugin-list.ts).
+  SCREEN_RE.lastIndex = 0;
+  while ((match = SCREEN_RE.exec(source)) !== null) {
+    const openBrace = source.indexOf("{", match.index + match[0].length);
+    if (openBrace < 0) continue;
+    const closeBrace = matchDelimiter(source, openBrace, "{", "}");
+    if (closeBrace < 0) continue;
+    const rawId = topLevelProperties(source.slice(openBrace, closeBrace + 1)).id;
+    if (!rawId) continue;
+    screens.push(...idsOf(rawId, match.index));
+  }
+}
+
+/** String constants declared anywhere in the plugin, so `id: SOME_ID` resolves. */
+function collectConstants(sources: string[], constants: Map<string, string>): void {
+  for (const source of sources) {
+    CONST_RE.lastIndex = 0;
+    let match: RegExpExecArray | null;
+    while ((match = CONST_RE.exec(source)) !== null) {
+      const [, name, , value] = match;
+      if (name && value && !constants.has(name)) constants.set(name, value);
     }
-    for (const id of idsForDynamicCall(source, match.index, rawId)) {
-      entries.push({ section, itemId: id });
-    }
+  }
+}
+
+/** The plugin's own display name, so the hub menu can label it without i18n guessing. */
+async function manifestName(path: string): Promise<string | null> {
+  try {
+    const raw = await readFile(join(path, "paseo-plugin.json"), "utf8");
+    const manifest = JSON.parse(raw) as { name?: unknown };
+    const name = typeof manifest.name === "string" ? manifest.name.trim() : "";
+    return name || null;
+  } catch {
+    return null;
   }
 }
 
 async function scanPlugin(id: string, enabled: boolean, path: string): Promise<ScanResult> {
   const entries: SidebarEntry[] = [];
+  const screens: string[] = [];
   const files: string[] = [];
+  const sources: string[] = [];
   await walkSources(path, files);
   for (const file of files) {
     try {
-      extractEntries(stripComments(await readFile(file, "utf8")), entries);
+      sources.push(stripComments(await readFile(file, "utf8")));
     } catch {
       // unreadable file: skip
     }
   }
-  // Dedupe (id, section).
+  // Two passes: ids are often shared constants (e.g. PLANE_SCREEN_ID) declared elsewhere.
+  const constants = new Map<string, string>();
+  collectConstants(sources, constants);
+  for (const source of sources) extractEntries(source, entries, screens, constants);
+  // Dedupe (id, section) and repeated screen ids (re-registration on language change).
   const seen = new Set<string>();
   const unique = entries.filter((entry) => {
     const key = `${entry.section}/${entry.itemId}`;
@@ -328,7 +385,7 @@ async function scanPlugin(id: string, enabled: boolean, path: string): Promise<S
     seen.add(key);
     return true;
   });
-  return { id, enabled, entries: unique };
+  return { id, enabled, name: await manifestName(path), screens: [...new Set(screens)], entries: unique };
 }
 
 /**
@@ -352,7 +409,11 @@ export async function installedPlugins(_input: RpcInput<typeof installedPluginsR
     for (const [id, entry] of Object.entries(config.plugins ?? {})) {
       const enabled = entry?.enabled !== false;
       const path = entry?.path;
-      results.push(enabled && path ? await scanPlugin(id, enabled, path) : { id, enabled, entries: [] });
+      results.push(
+        enabled && path
+          ? await scanPlugin(id, enabled, path)
+          : { id, enabled, name: null, screens: [], entries: [] },
+      );
     }
     results.sort((a, b) => a.id.localeCompare(b.id));
     return { plugins: results };

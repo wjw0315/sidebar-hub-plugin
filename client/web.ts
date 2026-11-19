@@ -219,12 +219,17 @@ export function reloadApp(): void {
 
 /**
  * Navigate to any plugin surface by its route (`/h/<serverId>/plugin/<pluginId>/<kind>/<id>`),
- * the same URL form Paseo builds for screens. Tries a synthetic link click first so Expo Router
- * routes client-side; falls back to a full navigation if the pathname did not move.
+ * the same URL form Paseo builds for screens. `kind` is Paseo's route segment and only
+ * `surface` and `sidebar` parse (`parsePluginSurfaceRoute`); a plugin's `addScreen` id is a
+ * `surface`. Anything else is rejected before navigating: the app would parse the URL to null
+ * and render nothing, which looks like a dead menu entry.
+ *
+ * Tries a synthetic link click first so Expo Router routes client-side; falls back to a full
+ * navigation if the pathname did not move.
  */
 export function navigateToSurface(
   serverId: string,
-  target: { pluginId: string; kind: string; surfaceId: string },
+  target: { pluginId: string; kind: "surface" | "sidebar"; surfaceId: string },
 ): boolean {
   const path = `/h/${encodeURIComponent(serverId)}/plugin/${encodeURIComponent(target.pluginId)}/${target.kind}/${encodeURIComponent(target.surfaceId)}`;
   interface NavigableWindow {
@@ -245,7 +250,7 @@ export function navigateToSurface(
       doc.body.removeChild(anchor);
       setTimeout(() => {
         const pathname = g.location?.pathname;
-        if (pathname && !pathname.includes("/plugin/")) g.location?.assign(path);
+        if (pathname && !pathname.startsWith(path.split("?")[0])) g.location?.assign(path);
       }, 600);
       return true;
     }

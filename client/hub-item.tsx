@@ -9,6 +9,7 @@ import { SidebarRow } from "@getpaseo/plugin/client/ui";
 import { MODULES, hubDefaults, hubRpc, hubSchema, type HubModule } from "../shared/hub";
 import { installedPluginsRpc, type InstalledPlugin } from "../shared/plugin-list";
 import { syncHiddenRows } from "./hub-hidden-rows";
+import { canManageSidebarRows, moduleAvailable } from "./capabilities";
 import { pluginGroupEntries, type PluginGroupEntry } from "./hub-plugin-entries";
 import { navigateToSurface, sidebarEntryVisible } from "./web";
 
@@ -54,7 +55,9 @@ function GroupMenu({
       cancelled = true;
     };
   }, [readPluginEntries]);
-  const shown = enabled === null ? MODULES : MODULES.filter((m) => enabled.includes(m.id));
+  const shown = (enabled === null ? MODULES : MODULES.filter((m) => enabled.includes(m.id))).filter(
+    moduleAvailable,
+  );
   const rowStyle = {
     paddingHorizontal: 14,
     paddingVertical: 10,
@@ -62,10 +65,17 @@ function GroupMenu({
   };
   if (shown.length === 0 && pluginEntries.length === 0) {
     return (
-      <View style={{ padding: 12, maxWidth: 260 }}>
+      <View style={{ padding: 12, maxWidth: 260, gap: 6 }}>
         <Text style={{ color: theme.colors.foregroundMuted, fontSize: 13 }}>
-          {zh ? "组内没有启用的模块，去设置里勾选。" : "No modules enabled. Pick some in settings."}
+          {zh ? "组内没有启用且本端可用的模块，去设置里勾选。" : "No enabled module works on this device. Pick some in settings."}
         </Text>
+        {!canManageSidebarRows ? (
+          <Text style={{ color: theme.colors.foregroundMuted, fontSize: 12 }}>
+            {zh
+              ? "手机端无法自动收起插件侧栏行，请在 Paseo 设置 → 侧栏里手动关闭。"
+              : "This device cannot hide plugin sidebar rows; turn them off in Paseo Settings → Sidebar."}
+          </Text>
+        ) : null}
       </View>
     );
   }
@@ -103,6 +113,16 @@ function GroupMenu({
           <Text style={{ color: theme.colors.foreground, fontSize: 14 }}>{entry.title}</Text>
         </Pressable>
       ))}
+      {/* Row hiding is localStorage-only, so it needs a one-time manual pass here. */}
+      {!canManageSidebarRows && pluginEntries.length === 0 ? (
+        <View style={{ ...rowStyle, paddingTop: 6, paddingBottom: 6 }}>
+          <Text style={{ color: theme.colors.foregroundMuted, fontSize: 12 }}>
+            {zh
+              ? "手机端无法自动收起插件侧栏行，请在 Paseo 设置 → 侧栏里手动关闭"
+              : "This device cannot hide plugin sidebar rows; use Paseo Settings → Sidebar"}
+          </Text>
+        </View>
+      ) : null}
     </View>
   );
 }

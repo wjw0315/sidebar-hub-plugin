@@ -7,6 +7,7 @@ import { SettingsAction, SettingsCard, SettingsSection, SettingsSwitch } from "@
 import { MODULES, hubDefaults, hubRpc, hubSchema, type HubModule } from "../shared/hub";
 import { installedPluginsRpc } from "../shared/plugin-list";
 import { syncHiddenRows } from "./hub-hidden-rows";
+import { canManageSidebarRows } from "./capabilities";
 import {
   discoverSidebarRows,
   reloadApp,
@@ -98,7 +99,7 @@ export function createHubSettingsScreen(client: PluginClientContext) {
             <Text style={{ paddingHorizontal: 16, fontSize: 12, color: "red" }}>{error}</Text>
           ) : null}
         </SettingsSection>
-        {Platform.OS === "web" ? <SidebarRowsSection zh={zh} setPending={setPending} /> : null}
+        {canManageSidebarRows ? <SidebarRowsSection zh={zh} setPending={setPending} /> : <NativeRowsNotice zh={zh} />}
         {pending ? (
           <SettingsSection title={zh ? "待生效" : "Pending changes"}>
             <SettingsCard>
@@ -113,6 +114,27 @@ export function createHubSettingsScreen(client: PluginClientContext) {
       </>
     );
   };
+}
+
+function NativeRowsNotice({ zh }: { zh: boolean }) {
+  return (
+    <SettingsSection
+      title={zh ? "插件侧栏条目" : "Plugin sidebar rows"}
+      info={
+        zh
+          ? "手机端（原生应用）没有可用的侧栏存储通道，插件既不能读取也不能修改其他插件行的显隐。"
+          : "Native builds expose no sidebar-settings channel to plugins, so rows cannot be read or changed here."
+      }
+    >
+      <SettingsCard>
+        <Text style={{ paddingHorizontal: 16, paddingVertical: 10, fontSize: 12, color: "gray" }}>
+          {zh
+            ? "请到 Paseo 设置 → 侧栏手动关闭不需要的条目，Sidebar Hub 那一行保留即可。"
+            : "Turn unwanted rows off in Paseo Settings → Sidebar and keep the Sidebar Hub row as the entry point."}
+        </Text>
+      </SettingsCard>
+    </SettingsSection>
+  );
 }
 
 function SidebarRowsSection({

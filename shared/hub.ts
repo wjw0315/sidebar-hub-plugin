@@ -19,6 +19,12 @@ export interface HubModule {
   externalSurface?: { pluginId: string; kind: "surface" | "sidebar"; surfaceId: string };
   /** The plugin's own sidebar row, hidden while the module is checked, restored when unchecked. */
   sourceSidebarEntry?: { section: "header" | "footer"; itemId: string };
+  /**
+   * Registered only in the web branch of index.client.tsx (DOM-dependent).
+   * Native builds must not list it — `openScreen` would target a screen that
+   * was never added, which renders nothing and looks like a dead entry.
+   */
+  webOnly?: boolean;
   /** Lucide icon name. */
   icon: string;
   enTitle: string;
@@ -26,7 +32,14 @@ export interface HubModule {
 }
 
 export const MODULES: HubModule[] = [
-  { id: "background", screenId: "hub-background", icon: "Image", enTitle: "Backgrounds", zhTitle: "背景" },
+  {
+    id: "background",
+    screenId: "hub-background",
+    webOnly: true,
+    icon: "Image",
+    enTitle: "Backgrounds",
+    zhTitle: "背景",
+  },
   { id: "plane", screenId: "plane-board", icon: "SquareKanban", enTitle: "Plane Board", zhTitle: "Plane 任务看板" },
   {
     id: "server-browser",
